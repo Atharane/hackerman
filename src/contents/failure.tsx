@@ -1,6 +1,6 @@
 import styleText from "data-text:./modal.css"
 import type { PlasmoCSConfig } from "plasmo"
-import React, { useEffect, useState } from "react"
+import { useEffect } from "react"
 
 export const config: PlasmoCSConfig = {
   matches: ["https://leetcode.com/*"]
@@ -43,14 +43,13 @@ const FailedModal = () => {
     // Listen for messages from the background script or other parts of the extension.
     chrome.runtime.onMessage.addListener(messageInterceptor)
 
-    // Cleanup on component unmount
     return () => {
       document.removeEventListener("click", handleClick)
       chrome.runtime.onMessage.removeListener(messageInterceptor)
     }
   }, [])
 
-  //   return <></>
+  // return <></>
 }
 
 export default FailedModal
