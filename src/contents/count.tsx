@@ -4,7 +4,7 @@ import type { PlasmoCSConfig } from "plasmo"
 import { CountButton } from "~features/countButton"
 
 export const config: PlasmoCSConfig = {
-  matches: ["https://www.plasmo.com/*", "https://*/*"]
+  matches: ["https://*/*"]
 }
 
 export const getStyle = () => {
@@ -13,9 +13,11 @@ export const getStyle = () => {
   return style
 }
 
-const PlasmoOverlay = () => {
-  const inputArea = document.querySelector(".chat-container input")
+// if (!window.location.href.startsWith("https://leetcode")) {
+//   window.location.href = "https://leetcode.com/studyplan/leetcode-75"
+// }
 
+const PlasmoOverlay = () => {
   return (
     <div className="plasmo-z-50 plasmo-flex plasmo-fixed plasmo-top-32 plasmo-right-8">
       <CountButton />
