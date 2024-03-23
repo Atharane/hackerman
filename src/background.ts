@@ -1,72 +1,9 @@
+import { store } from "~models/database"
+
 const LEETCODE_URL = "https://leetcode.com"
 const RULE_ID = 1
 const isLeetCodeUrl = (url: string) => url.includes(LEETCODE_URL)
-
-type schema = {
-  upadtedAt: string
-  operations: number
-  records: [
-    {
-      uid: string
-      operation: string
-      createdAt: string
-      updatedAt: string
-      problems: [
-        {
-          id: string
-          testcases: number
-          submissions: [
-            {
-              id: string
-              timestamp: string
-              status: string
-              runtime: number
-              memory: number
-              language: string
-              passed_testcases: number
-              runtime_percentile: number
-              memory_percentile: number
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-
-function decodeRequestBody(requestBody) {
-  // Check if the request body is in raw format
-  if (requestBody.raw) {
-    let decodedData = ""
-    requestBody.raw.forEach((part) => {
-      // Assuming the body part is UTF-8 encoded
-      let encodedStr = new TextDecoder("utf-8").decode(part.bytes)
-      decodedData += encodedStr
-    })
-
-    try {
-      // Try to parse the JSON if possible
-      return JSON.parse(decodedData)
-    } catch (e) {
-      console.error("Error parsing JSON:", e)
-      // Return raw data if it's not JSON
-      return decodedData
-    }
-  }
-
-  // Add more conditions here for other types like formData, file, etc.
-
-  return null // Return null or some indication if the format is unrecognized or unsupported
-}
-
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {},
-  { urls: ["https://leetcode.com/*"] },
-  ["requestBody"]
-)
-
-const isSubmissionSuccessURL = (url: string) =>
-  url.includes("/submissions/detail/") && url.includes("/check/")
+const uid = "atharane"
 
 const sendUserSolvedMessage = (languageUsed: string) => {
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -85,6 +22,18 @@ const sendUserFailedMessage = () => {
   })
 }
 
+const getCurrentURL = async () => {
+  try {
+    const [activeTab] = await new Promise<chrome.tabs.Tab[]>((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, resolve)
+    })
+    return activeTab.url
+  } catch (error) {
+    console.error("ERROR ~ unable to fetch current url", error)
+    return null
+  }
+}
+
 const state = {
   leetcodeProblemSolved: false,
   leetCodeProblem: {
@@ -97,66 +46,38 @@ const state = {
   urlListener: null
 }
 
-let store = {
-  upadtedAt: new Date().toISOString(),
-  operations: 0,
-  records: [
-    {
-      uid: "atharane",
-      operation: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      problems: []
-    }
-  ]
-}
+console.log("===== ~ store ", JSON.stringify(store, null, 2))
 
-console.log("===== ~ store:", JSON.stringify(store, null, 2))
+const pastSubmissions = new Set()
+const evaluateSubmissionStatus = async (details) => {
+  const currentURL = await getCurrentURL()
+  const isRequestTypeSubmission =
+    details.url.includes("/submissions/detail/") &&
+    details.url.includes("/check/")
 
-const checkIfUserSolvedProblem = async (details) => {
-  // If the user has already solved the problem, then don't do anything
-  //   if (await storage.getProblemSolved()) return
-  // Get the current active tab's URL
-  let currentURL = ""
+  if (!isRequestTypeSubmission) return
+
   try {
-    const [activeTab] = await new Promise<chrome.tabs.Tab[]>((resolve) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, resolve)
-    })
-    currentURL = activeTab.url
-  } catch (error) {
-    console.error("error getting active tab:", error)
-    return
-  }
+    const submissionId = details.url.split("/")[5]
 
-  if (!isSubmissionSuccessURL(details.url)) return
+    if (pastSubmissions.has(submissionId)) return
+    pastSubmissions.add(submissionId)
 
-  //   const problemUrl = await storage.getProblemUrl()
-
-  //   const sameUrl =
-  //     problemUrl === currentURL || problemUrl + "description/" === currentURL
-
-  //   if (!sameUrl) {
-  //     return
-  //   }
-
-  //lastCheckedUrl = details.url
-  //lastCheckedTimestamp = now
-
-  // if (state.solvedListenerActive) {
-  //   // Remove the listener so that it doesn't fire again, since the outcome will either be success or fail
-  //   // And we'll add it again when the user clicks submit
-  //   state.solvedListenerActive = false
-  //   chrome.webRequest.onCompleted.removeListener(checkIfUserSolvedProblem)
-  // }
-
-  console.log(`listening to ${details.url}`)
-  try {
-    // current url will be in the form of https://leetcode.com/problems/{{problemID}}/garbage/..., extract the problemID
-    const problemID = currentURL.split("/")[4]
-
-    //   const hyperTortureMode = await getHyperTortureMode()
+    const problemId = currentURL.split("/")[4]
     const response = await fetch(details.url)
-    const data = await response.json()
+    let data = await response.json()
+
+    let loopLimit = 20
+
+    while (data.state === "PENDING") {
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+      const response = await fetch(details.url)
+      data = await response.json()
+      loopLimit -= 1
+      if (loopLimit === 0) {
+        break
+      }
+    }
 
     const submission = {
       id: data.submission_id,
@@ -171,12 +92,14 @@ const checkIfUserSolvedProblem = async (details) => {
     }
 
     if (!submission.id) return
+    console.log("~ submission", JSON.stringify(submission, null, 2))
 
-    let problem = store.records[0].problems.find((p) => p.id === problemID)
+
+    let problem = store.records[uid].problems[problemId]
 
     if (!problem) {
       problem = {
-        id: problemID,
+        id: problemId,
         testcases: data.total_testcases,
         submissions: [submission]
       }
@@ -190,62 +113,58 @@ const checkIfUserSolvedProblem = async (details) => {
       }
     }
 
+    store.records[uid].problems[problemId] = problem
     store.operations += 1
     store.upadtedAt = new Date().toISOString()
 
-    // keep problems with unique id
-    const existingProblems = store.records[0].problems.filter(
-      (p) => p.id !== problemID
-    )
+    console.log("~ store:", JSON.stringify(store, null, 2))
 
-    store.records[0].problems = [...existingProblems, problem]
+    // if (data.state === "STARTED" || data.state === "PENDING") {
+    //   if (!state.solvedListenerActive) {
+    //     state.solvedListenerActive = true
+    //     chrome.webRequest.onCompleted.addListener(checkIfUserSolvedProblem, {
+    //       urls: ["*://leetcode.com/submissions/detail/*/check/"]
+    //     })
+    //   }
+    //   return
+    // }
+    // if (data.status_msg !== "Accepted") {
+    //   // if (hyperTortureMode) {
+    //   //   await resetHyperTortureStreak()
+    //   sendUserFailedMessage()
+    //   // }
+    //   console.log("User failed the problem")
+    //   return
+    // }
+    // if (
+    //   data.status_msg === "Accepted" &&
+    //   data.state === "SUCCESS" &&
+    //   !data.code_answer
+    // ) {
+    //   console.log("user solved the problem")
+    //   // await storage.updateStreak()
+    //   state.leetcodeProblemSolved = true
+    //   // chrome.declarativeNetRequest.updateDynamicRules({
+    //   //   removeRuleIds: [RULE_ID]
+    //   // })
+    //   chrome.webRequest.onCompleted.removeListener(checkIfUserSolvedProblem)
+    //   // if (hyperTortureMode) {
+    //   //   if (state.lastAttemptedUrl) {
+    //   //     chrome.tabs.update({ url: state.lastAttemptedUrl })
+    //   //   }
+    //   //   await updateStorage()
+    //   // } else {
+    //   sendUserSolvedMessage(data?.lang)
+    //   // }
+    // }
 
-    console.log("===== ~ store:", JSON.stringify(store, null, 2))
-
-    if (data.state === "STARTED" || data.state === "PENDING") {
-      if (!state.solvedListenerActive) {
-        state.solvedListenerActive = true
-        chrome.webRequest.onCompleted.addListener(checkIfUserSolvedProblem, {
-          urls: ["*://leetcode.com/submissions/detail/*/check/"]
-        })
-      }
-      return
-    }
-    if (data.status_msg !== "Accepted") {
-      // if (hyperTortureMode) {
-      //   await resetHyperTortureStreak()
-      sendUserFailedMessage()
-      // }
-      console.log("User failed the problem")
-      return
-    }
-    if (
-      data.status_msg === "Accepted" &&
-      data.state === "SUCCESS" &&
-      !data.code_answer
-    ) {
-      console.log("user solved the problem")
-      // await storage.updateStreak()
-      state.leetcodeProblemSolved = true
-      chrome.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds: [RULE_ID]
-      })
-      chrome.webRequest.onCompleted.removeListener(checkIfUserSolvedProblem)
-      // if (hyperTortureMode) {
-      //   if (state.lastAttemptedUrl) {
-      //     chrome.tabs.update({ url: state.lastAttemptedUrl })
-      //   }
-      //   await updateStorage()
-      // } else {
-      sendUserSolvedMessage(data?.lang)
-      // }
-    }
+    // return
   } catch (error) {
-    console.error("Error:", error)
+    console.error("ERROR ~ unable to fetch submission status", error)
   }
 }
 
-chrome.webRequest.onCompleted.addListener(checkIfUserSolvedProblem, {
+chrome.webRequest.onCompleted.addListener(evaluateSubmissionStatus, {
   urls: ["https://leetcode.com/*"]
 })
 
@@ -273,7 +192,7 @@ const onMessageReceived = (message, sender, sendResponse) => {
         "User clicked submit, adding listener",
         state.solvedListenerActive
       )
-      chrome.webRequest.onCompleted.addListener(checkIfUserSolvedProblem, {
+      chrome.webRequest.onCompleted.addListener(evaluateSubmissionStatus, {
         urls: ["*://leetcode.com/submissions/detail/*/check/"]
       })
       break
