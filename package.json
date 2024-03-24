@@ -12,6 +12,7 @@
   "dependencies": {
     "@million/lint": "^0.0.73",
     "@plasmohq/storage": "^1.9.3",
+    "@upstash/redis": "^1.29.0",
     "i": "^0.3.7",
     "npm": "^10.5.0",
     "plasmo": "0.85.2",
