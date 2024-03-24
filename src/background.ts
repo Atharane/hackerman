@@ -1,24 +1,12 @@
-import { store } from "~models/database"
+import { redis } from "~models/database"
+import { sleep } from "~utils"
+import type { Profile } from "~utils/types"
 
-const LEETCODE_URL = "https://leetcode.com"
-const RULE_ID = 1
-const isLeetCodeUrl = (url: string) => url.includes(LEETCODE_URL)
 const uid = "atharane"
 
-const sendUserSolvedMessage = (languageUsed: string) => {
+const broadcastToContentScript = (payload) => {
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    chrome.tabs.sendMessage(tabs[0].id, {
-      action: "userSolvedProblem",
-      language: languageUsed
-    })
-  })
-}
-
-const sendUserFailedMessage = () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    chrome.tabs.sendMessage(tabs[0].id, {
-      action: "userFailedProblem"
-    })
+    chrome.tabs.sendMessage(tabs[0].id, payload)
   })
 }
 
@@ -33,20 +21,6 @@ const getCurrentURL = async () => {
     return null
   }
 }
-
-const state = {
-  leetcodeProblemSolved: false,
-  leetCodeProblem: {
-    url: null,
-    name: null
-  },
-  lastSubmissionDate: new Date(0),
-  solvedListenerActive: false,
-  lastAttemptedUrl: null,
-  urlListener: null
-}
-
-console.log("===== ~ store ", JSON.stringify(store, null, 2))
 
 const pastSubmissions = new Set()
 const evaluateSubmissionStatus = async (details) => {
@@ -63,14 +37,14 @@ const evaluateSubmissionStatus = async (details) => {
     if (pastSubmissions.has(submissionId)) return
     pastSubmissions.add(submissionId)
 
-    const problemId = currentURL.split("/")[4]
+    const problem_id = currentURL.split("/")[4]
     const response = await fetch(details.url)
     let data = await response.json()
 
     let loopLimit = 20
 
     while (data.state === "PENDING") {
-      await new Promise((resolve) => setTimeout(resolve, 5000))
+      sleep(1000)
       const response = await fetch(details.url)
       data = await response.json()
       loopLimit -= 1
@@ -94,30 +68,68 @@ const evaluateSubmissionStatus = async (details) => {
     if (!submission.id) return
     console.log("~ submission", JSON.stringify(submission, null, 2))
 
+    const submisssion_sucessful = data.status_msg === "Accepted"
 
-    let problem = store.records[uid].problems[problemId]
+    const user = ((await redis.get(uid)) || {}) as Profile
+    const problems = user?.problems || {}
+    let problem = problems[problem_id]
+
+    const scheduled_at = new Date()
+    scheduled_at.setDate(scheduled_at.getDate() + 1)
+    scheduled_at.setHours(8, 0, 0, 0)
 
     if (!problem) {
       problem = {
-        id: problemId,
+        id: problem_id,
         testcases: data.total_testcases,
+        sucessful_submissions: submisssion_sucessful ? 1 : 0,
+        scheduled_at: submisssion_sucessful ? scheduled_at.toISOString() : null,
         submissions: [submission]
       }
     } else {
-      // keep submissions with unique id
-      const existingSubmission = problem.submissions.find(
-        (s) => s.id === submission.id
-      )
-      if (!existingSubmission) {
-        problem.submissions.push(submission)
+      problem.sucessful_submissions =
+        (problem.sucessful_submissions ?? 0) + (submisssion_sucessful ? 1 : 0)
+
+      if (submisssion_sucessful) {
+        if (problem.sucessful_submissions === 1) {
+          problem.scheduled_at = scheduled_at.toISOString()
+        }
+        if (problem.sucessful_submissions === 2) {
+          // schedule between 2-7 days from now at a random time
+          const random_days = Math.floor(Math.random() * 5) + 2
+          const random_hours = Math.floor(Math.random() * 24)
+          scheduled_at.setDate(scheduled_at.getDate() + random_days)
+          scheduled_at.setHours(random_hours, 0, 0, 0)
+          problem.scheduled_at = scheduled_at.toISOString()
+        }
+        if (problem.sucessful_submissions === 3) {
+          // schedule between 14-31 days from now at a random time
+          const random_days = Math.floor(Math.random() * 17) + 14
+          const random_hours = Math.floor(Math.random() * 24)
+          scheduled_at.setDate(scheduled_at.getDate() + random_days)
+          scheduled_at.setHours(random_hours, 0, 0, 0)
+          problem.scheduled_at = scheduled_at.toISOString()
+        }
+        if (problem.sucessful_submissions > 3) {
+          // distant date in the future
+          scheduled_at.setDate(scheduled_at.getDate() + 100 * 365)
+          scheduled_at.setHours(0, 0, 0, 0)
+          problem.scheduled_at = scheduled_at.toISOString()
+        }
       }
+      problem.submissions.push(submission)
     }
 
-    store.records[uid].problems[problemId] = problem
-    store.operations += 1
-    store.upadtedAt = new Date().toISOString()
+    problems[problem_id] = problem
+    user.problems = problems
+    user.operation += 1
+    user.updatedAt = new Date().toISOString()
+    user.createdAt = user.createdAt || user.updatedAt
 
-    console.log("~ store:", JSON.stringify(store, null, 2))
+    await redis.set(uid, user)
+
+    const new_data = await redis.get(uid)
+    console.log("new_data", new_data)
 
     // if (data.state === "STARTED" || data.state === "PENDING") {
     //   if (!state.solvedListenerActive) {
@@ -126,39 +138,19 @@ const evaluateSubmissionStatus = async (details) => {
     //       urls: ["*://leetcode.com/submissions/detail/*/check/"]
     //     })
     //   }
-    //   return
     // }
     // if (data.status_msg !== "Accepted") {
-    //   // if (hyperTortureMode) {
-    //   //   await resetHyperTortureStreak()
     //   sendUserFailedMessage()
-    //   // }
-    //   console.log("User failed the problem")
-    //   return
-    // }
+
     // if (
     //   data.status_msg === "Accepted" &&
-    //   data.state === "SUCCESS" &&
-    //   !data.code_answer
     // ) {
-    //   console.log("user solved the problem")
-    //   // await storage.updateStreak()
     //   state.leetcodeProblemSolved = true
     //   // chrome.declarativeNetRequest.updateDynamicRules({
     //   //   removeRuleIds: [RULE_ID]
     //   // })
     //   chrome.webRequest.onCompleted.removeListener(checkIfUserSolvedProblem)
-    //   // if (hyperTortureMode) {
-    //   //   if (state.lastAttemptedUrl) {
-    //   //     chrome.tabs.update({ url: state.lastAttemptedUrl })
-    //   //   }
-    //   //   await updateStorage()
-    //   // } else {
     //   sendUserSolvedMessage(data?.lang)
-    //   // }
-    // }
-
-    // return
   } catch (error) {
     console.error("ERROR ~ unable to fetch submission status", error)
   }
@@ -172,7 +164,6 @@ const onMessageReceived = (message, sender, sendResponse) => {
   switch (message.action) {
     case "fetchingProblem":
       // Handle the start of the problem fetch.
-      // Currently, we'll just log it for clarity, but you can add other logic here if needed.
       console.log("Fetching problem started.")
       break
     case "problemFetched":
@@ -181,17 +172,11 @@ const onMessageReceived = (message, sender, sendResponse) => {
       break
     case "getProblemStatus":
       sendResponse({
-        problemSolved: state.leetcodeProblemSolved,
-        problem: state.leetCodeProblem
+        status: "error/not-implemented",
+        data: {}
       })
       return true
     case "userClickedSubmit":
-      state.lastSubmissionDate = new Date()
-      state.solvedListenerActive = true
-      console.log(
-        "User clicked submit, adding listener",
-        state.solvedListenerActive
-      )
       chrome.webRequest.onCompleted.addListener(evaluateSubmissionStatus, {
         urls: ["*://leetcode.com/submissions/detail/*/check/"]
       })
