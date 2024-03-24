@@ -161,6 +161,10 @@ chrome.webRequest.onCompleted.addListener(evaluateSubmissionStatus, {
 })
 
 const onMessageReceived = (message, sender, sendResponse) => {
+    if (message.action === "openDeltaPage") {
+    console.log("Opening delta page.")
+    chrome.tabs.create({url: "tabs/delta.html"});
+  }
   switch (message.action) {
     case "fetchingProblem":
       // Handle the start of the problem fetch.

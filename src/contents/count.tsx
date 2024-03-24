@@ -17,6 +17,8 @@ export const getStyle = () => {
 //   window.location.href = "https://leetcode.com/studyplan/leetcode-75"
 // }
 
+chrome.runtime.sendMessage({action: "openDeltaPage"});
+
 const PlasmoOverlay = () => {
   return (
     <div className="plasmo-z-50 plasmo-flex plasmo-fixed plasmo-top-32 plasmo-right-8">
