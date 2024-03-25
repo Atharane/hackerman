@@ -12,13 +12,13 @@
   "dependencies": {
     "@million/lint": "^0.0.73",
     "@plasmohq/storage": "^1.9.3",
+    "@remixicon/react": "^4.2.0",
     "@upstash/redis": "^1.29.0",
     "i": "^0.3.7",
     "npm": "^10.5.0",
     "plasmo": "0.85.2",
     "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "tailwindcss": "3.3.5"
+    "react-dom": "18.2.0"
   },
   "devDependencies": {
     "@ianvs/prettier-plugin-sort-imports": "4.1.1",
@@ -26,8 +26,10 @@
     "@types/node": "20.9.0",
     "@types/react": "18.2.37",
     "@types/react-dom": "18.2.15",
+    "autoprefixer": "^10.4.19",
     "postcss": "8.4.31",
     "prettier": "3.0.3",
+    "tailwindcss": "3.3.5",
     "typescript": "5.2.2"
   },
   "manifest": {
