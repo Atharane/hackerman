@@ -12,8 +12,11 @@ const SquiglyProgressBar = ({
   className?: string
 }) => {
   const percentage = Math.floor((progress / total) * 100)
-  const progressOffset = Math.max(percentage / 100 - 0.05, 0)
-  const remainderOffset = Math.min(percentage / 100 + 0.05, 1)
+  const OFFSET = 0.05
+  const progressOffset =
+    percentage === 100 ? 1 : Math.max(percentage / 100 - OFFSET, 0)
+  const remainderOffset =
+    percentage === 100 ? 0 : Math.min(percentage / 100 + OFFSET, 1)
 
   return (
     <div className={`${className} group relative`}>

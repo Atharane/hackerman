@@ -1,14 +1,44 @@
 import { redis } from "~models/database"
 import { sleep } from "~utils"
+import { ACTIONS } from "~utils/constants"
 import type { Profile } from "~utils/types"
 
 const uid = "atharane"
 
 const broadcastToContentScript = (payload) => {
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    chrome.tabs.sendMessage(tabs[0].id, payload)
-  })
+  try {
+    console.log("broadcastToContentScript", payload)
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      chrome.tabs.sendMessage(tabs[0].id, payload)
+    })
+  } catch (error) {
+    console.error("ERROR ~ unable to broadcast to content script", error)
+  }
 }
+
+try {
+  chrome.runtime.sendMessage({ action: "openDeltaPage" })
+  console.log("openDeltaPage")
+} catch (error) {
+  console.error("ERROR ~ unable to open delta page", error)
+}
+
+// try {
+//   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+//     chrome.tabs.sendMessage(tabs[0].id, { message: "myMessage" })
+//   })
+// } catch (error) {
+//   console.error("ERROR ~ unable to fetch current url", error)
+// }
+
+// send myMessage every 5 seconds
+
+// setInterval(() => {
+// chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+//   chrome.tabs.sendMessage(tabs[0].id, { message: "myMessage" })
+//   console.log(`messge sent at seconds ${new Date().getSeconds()}`)
+// })
+// }, 2000)
 
 const getCurrentURL = async () => {
   try {
@@ -31,20 +61,24 @@ const evaluateSubmissionStatus = async (details) => {
 
   if (!isRequestTypeSubmission) return
 
+  console.log("evaluateSubmissionStatus", details.url)
+
   try {
     const submissionId = details.url.split("/")[5]
 
     if (pastSubmissions.has(submissionId)) return
+
+    console.log("submissionId", submissionId)
     pastSubmissions.add(submissionId)
 
     const problem_id = currentURL.split("/")[4]
     const response = await fetch(details.url)
     let data = await response.json()
 
-    let loopLimit = 20
-
-    while (data.state === "PENDING") {
-      sleep(1000)
+    let loopLimit = 160
+    while (!data.lang) {
+      console.log(loopLimit)
+      await sleep(1000)
       const response = await fetch(details.url)
       data = await response.json()
       loopLimit -= 1
@@ -65,7 +99,11 @@ const evaluateSubmissionStatus = async (details) => {
       memory_percentile: data.memory_percentile
     }
 
-    if (!submission.id) return
+    if (!submission.id) {
+      console.error("ERROR ~ unable to fetch submission id", submission)
+      return
+    }
+
     console.log("~ submission", JSON.stringify(submission, null, 2))
 
     const submisssion_sucessful = data.status_msg === "Accepted"
@@ -84,6 +122,9 @@ const evaluateSubmissionStatus = async (details) => {
         testcases: data.total_testcases,
         sucessful_submissions: submisssion_sucessful ? 1 : 0,
         scheduled_at: submisssion_sucessful ? scheduled_at.toISOString() : null,
+        last_successful_submission_at: submisssion_sucessful
+          ? new Date().toISOString()
+          : null,
         submissions: [submission]
       }
     } else {
@@ -116,6 +157,7 @@ const evaluateSubmissionStatus = async (details) => {
           scheduled_at.setHours(0, 0, 0, 0)
           problem.scheduled_at = scheduled_at.toISOString()
         }
+        problem.last_successful_submission_at = new Date().toISOString()
       }
       problem.submissions.push(submission)
     }
@@ -130,6 +172,38 @@ const evaluateSubmissionStatus = async (details) => {
 
     const new_data = await redis.get(uid)
     console.log("new_data", new_data)
+
+    const problems_scheduled_today = Object.values(problems).filter(
+      (problem) =>
+        new Date(problem.scheduled_at).getDate() === new Date().getDate()
+    ).length
+
+    const problems_solved_today = Object.values(problems).filter(
+      (problem) =>
+        new Date(problem.last_successful_submission_at).getDate() ===
+        new Date().getDate()
+    ).length
+
+    const recurrence_timestamp = problem.scheduled_at
+
+    const next_problem = Object.values(problems).find(
+      (problem) =>
+        // new Date(problem.scheduled_at).getDate() === new Date().getDate()
+        new Date(problem.scheduled_at).getDate() >= new Date().getDate() &&
+        new Date(problem.scheduled_at).getDate() <= new Date().getDate() + 7
+    )
+
+    submisssion_sucessful &&
+      broadcastToContentScript({
+        action: ACTIONS.SUBMISSION_SUCCESSFUL,
+        data: {
+          text_content: "Let's fucking go!",
+          problems_solved_today,
+          problems_scheduled_today,
+          recurrence_timestamp,
+          next_problem
+        }
+      })
 
     // if (data.state === "STARTED" || data.state === "PENDING") {
     //   if (!state.solvedListenerActive) {
@@ -161,32 +235,33 @@ chrome.webRequest.onCompleted.addListener(evaluateSubmissionStatus, {
 })
 
 const onMessageReceived = (message, sender, sendResponse) => {
-    if (message.action === "openDeltaPage") {
-    console.log("Opening delta page.")
-    chrome.tabs.create({url: "tabs/delta.html"});
+  if (message.action === ACTIONS.OPEN_DASHBOARD) {
+    chrome.tabs.create({ url: "tabs/dashboard.html" })
   }
   switch (message.action) {
-    case "fetchingProblem":
-      // Handle the start of the problem fetch.
-      console.log("Fetching problem started.")
-      break
-    case "problemFetched":
-      // Handle the end of the problem fetch.
-      console.log("Fetching problem completed.")
-      break
-    case "getProblemStatus":
-      sendResponse({
-        status: "error/not-implemented",
-        data: {}
+    case ACTIONS.USER_CLICKED_SUBMIT:
+      const am8Tomorrow = new Date()
+      am8Tomorrow.setDate(am8Tomorrow.getDate() + 1)
+      am8Tomorrow.setHours(8, 0, 0, 0)
+
+      broadcastToContentScript({
+        action: ACTIONS.SUBMISSION_SUCCESSFUL,
+        data: {
+          text_content: "Let's fucking go!",
+          problems_solved_today: 12,
+          problems_scheduled_today: 20,
+          recurrence_timestamp: am8Tomorrow,
+          next_problem: "atharane.verel.com"
+        }
       })
-      return true
-    case "userClickedSubmit":
+
+      return
       chrome.webRequest.onCompleted.addListener(evaluateSubmissionStatus, {
         urls: ["*://leetcode.com/submissions/detail/*/check/"]
       })
       break
     default:
-      console.warn("Unknown message action:", message.action)
+      console.warn("unknown message received", message.action)
   }
 }
 
