@@ -17,6 +17,7 @@
     "@upstash/redis": "^1.29.0",
     "framer-motion": "^11.0.20",
     "i": "^0.3.7",
+    "lodash": "^4.17.21",
     "npm": "^10.5.0",
     "plasmo": "0.85.2",
     "react": "18.2.0",
@@ -36,6 +37,7 @@
   },
   "manifest": {
     "permissions": [
+      "scripting",
       "webRequest",
       "webRequestBlocking",
       "declarativeNetRequest",
