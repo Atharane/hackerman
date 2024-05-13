@@ -1,16 +1,22 @@
-function DeltaFlyerPage() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        padding: 16
-      }}>
-      <h2>Delta Flyer Tab</h2>
+import { useEffect, useState } from "react"
 
-      <p>This tab is only available on the Delta Flyer page.</p>
-    </div>
-  )
+import "~/style.css"
+
+function Dashboard() {
+  const [metadata, setMetadata] = useState(null)
+
+  useEffect(() => {
+    {
+      async function fetchDashboardData() {
+        const message = { action: "fetch_dashboard_data" }
+        const response = await chrome.runtime.sendMessage(message)
+        setMetadata(response.data)
+      }
+      fetchDashboardData()
+    }
+  }, [])
+
+  return <main className="h-screen flex p-4 flex-col gap-4 font-dm-sans"></main>
 }
 
-export default DeltaFlyerPage
+export default Dashboard
