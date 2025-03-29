@@ -47,9 +47,9 @@ const SquiglyProgressBar = ({
               initial={{ offset: 0 }}
               animate={{ offset: progressOffset }}
               transition={{ duration: 1.5 }}
-              stop-color="orange"
+              stopColor="orange"
             />
-            <stop offset={remainderOffset} stop-color="white" />
+            <stop offset={remainderOffset} stopColor="white" />
           </linearGradient>
         </defs>
       </svg>
